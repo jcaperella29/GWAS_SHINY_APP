@@ -1,0 +1,28 @@
+Bootstrap: docker
+From: rocker/shiny:latest
+
+%labels
+  Author JCAP
+  Description GWAS Shiny App with machine learning, plotting, and power analysis
+
+%environment
+  export R_LIBS_USER=/opt/Rlibs
+  export PORT=3838
+  export SHINY_PORT=3838
+  export SHINY_HOST=0.0.0.0
+
+%post
+  ## Create R library path
+  mkdir -p /opt/Rlibs
+
+  ## Install R packages
+  Rscript -e "install.packages(c('shiny','data.table','DT','VariantAnnotation','ranger','mlr3','mlr3learners','plotly','umap','GenomicFeatures','AnnotationDbi','TxDb.Hsapiens.UCSC.hg19.knownGene','org.Hs.eg.db','enrichR','ROCR'))"
+
+  ## Copy app files (assumes Singularity.def is in repo root with app.R & www/)
+  mkdir -p /srv/shiny-server/app
+  cp -r /workspace/app.R /srv/shiny-server/app/
+  cp -r /workspace/www /srv/shiny-server/app/
+
+%runscript
+  ## Start Shiny Server
+  exec shiny-server
