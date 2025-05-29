@@ -1,3 +1,4 @@
+
 library(shiny)
 library(DT)
 library(data.table)
@@ -27,12 +28,18 @@ ui <- fluidPage(
       fileInput("phenoFile", "Upload Phenotype Table (CSV)", accept = ".csv"),
       fileInput("covarFile", "Upload Covariates Table ", accept = ".csv"),
       numericInput("maf_thresh", "MAF Threshold", value = 0.01),
-     
+      
       numericInput("af_thresh", "ALT Allele Frequency Threshold", value = 0.01),      # NEW
       numericInput("hwe_thresh", "HWE P-value Threshold", value = 1e-6),              # NEW
       actionButton("runQC", "Run QC"),
+      actionButton("runPCA", "Run PCA"),
+      actionButton("runUMAP", "Run UMAP"),
+      actionButton("runPower", "Run Power Analysis"),
+      tabPanel("Power Analysis", DTOutput("powerTable")),
       
-     
+      actionButton("runPowerCurve", "Run Power Curve"),
+      
+      
       actionButton("runGWAS", "Run GWAS"),
       sliderInput("pval_thresh", "P-value Threshold",
                   min = 1e-10, max = 0.1, value = 0.05, step = 0.0001),
@@ -54,21 +61,66 @@ ui <- fluidPage(
         label = "Choose enrichment database",
         choices = c("KEGG_2021_Human", "GO_Biological_Process_2021", "Reactome_2016"),
         selected = "Reactome_2016"),
+      actionButton("runRF", "Train Random Forest"),
+      actionButton("runROC", "Run ROC Plot"),
+      
+      
+      downloadButton("download_power", "Download Power Table"),
       
       downloadButton("download_gwas", "Download GWAS Results"),
       downloadButton("download_covar", "Download Covariate P-Values"),
       downloadButton("download_final", "Download Final Hits"),
       downloadButton("download_annotated", "Download Annotated Hits"),
       downloadButton("download_enrichment", "Download Enrichment Table"),
+      downloadButton("download_rf_preds", "Download RF Predictions"),
+      downloadButton("download_rf_metrics", "Download RF Metrics"),
+      downloadButton("download_rf_importance", "Download RF Importance"),
       
       
     ),
     mainPanel(
       tabsetPanel(
+        tabPanel("README",
+                 fluidRow(
+                   column(
+                     width = 12,
+                     h2("📘 How to Use the JCAP GWAS App"),
+                     tags$ol(
+                       tags$li(strong("Upload Data:"), " Use the top three file inputs to upload your VCF file, phenotype table (CSV), and optional covariates table."),
+                       tags$li(strong("Perform QC:"), " Set the MAF, AF, and HWE thresholds, then click ", code("Run QC"), " to filter your SNPs."),
+                       tags$li(strong("Exploratory Visualization:"), " Click ", code("Run PCA"), " and ", code("Run UMAP"), " to view dimensionality-reduced sample clustering."),
+                       tags$li(strong("Power Analysis:"), " Use ", code("Run Power Analysis"), " to estimate power based on a top SNP, and ", code("Run Power Curve"), " to visualize power vs. sample size."),
+                       tags$li(strong("GWAS Execution:"), " Set your desired p-value threshold using the slider and (optionally) toggle Bonferroni correction, then click ", code("Run GWAS"), ". This will generate association p-values for all SNPs."),
+                       tags$li(strong("Interpret Final Hits:"), " The ", strong("Final Phenotype Hits"), " table contains SNPs associated with the phenotype but not with any covariates."),
+                       tags$li(strong("GWAS Visualizations:"), " Use ", code("Run Q-Q Plot"), " and ", code("Run Manhattan Plot"), " to view GWAS plots. You can filter the Manhattan plot by chromosome and base pair position."),
+                       tags$li(strong("SNP-to-Gene Mapping:"), " Click ", code("Map SNPs to Nearest Genes"), " to associate significant SNPs with genes, and ", code("Plot Gene Map"), " to visualize them."),
+                       tags$li(strong("Pathway Enrichment:"), " Click ", code("Run Enrichment"), " to perform pathway analysis, then choose a database and click ", code("Plot Enrichment Results"), " to visualize the top terms."),
+                       tags$li(strong("Machine Learning (Random Forest):"), " Click ", code("Train Random Forest"), " to build a predictive model using final hits. This will output predicted classes, AUC, sensitivity/specificity, and SNP importance rankings. You can also generate an ROC curve with ", code("Run ROC Plot"), "."),
+                       tags$li(strong("Download Results:"), " Use the download buttons on the sidebar and inside each tab to export all tables as CSVs.")
+                     ),
+                     tags$hr(),
+                     p("🛠️ For questions or issues, contact ",
+                       a("John", href = "https://github.com/jcaperella29", target = "_blank"),
+                       " or view the full documentation at ",
+                       a("GWAS_SHINY_APP", href = "https://github.com/jcaperella29/GWAS_SHINY_APP", target = "_blank"), "."
+                     )
+                   )
+                 )
+        ),
+        
+        
         tabPanel("Phenotype Preview", DTOutput("phenoPreview")),
         tabPanel("Covariates Preview", DTOutput("covarPreview")),
         tabPanel("QC Summary", DTOutput("qcTable")),
         tabPanel("Filtered SNPs", DTOutput("filteredSnps")),
+        tabPanel("PCA Plot", plotlyOutput("pcaPlot")),
+        
+        tabPanel("UMAP Plot", plotlyOutput("umapPlot")),
+        
+        tabPanel("Power Analysis", DTOutput("powerTable")),
+        
+        tabPanel("Power Curve", plotlyOutput("powerPlot")),
+        
         tabPanel("GWAS Results", DTOutput("gwasResults")),
         tabPanel("Covariate Effects", 
                  DTOutput("covarPvals")),
@@ -78,19 +130,28 @@ ui <- fluidPage(
         tabPanel("Manhattan Plot", plotlyOutput("manhattanPlot")),
         tabPanel("SNP-to_Gene Mapping",
                  DTOutput("annotatedHits")),
-                 tabPanel("Gene Map Plot",
-                          plotlyOutput("geneMapPlot", height = "500px")),
+        tabPanel("Gene Map Plot",
+                 plotlyOutput("geneMapPlot", height = "500px")),
         tabPanel("Pathway Enrichment",
                  DTOutput("enrichmentTable")),
         
-        tabPanel("Enrichment Barplot", plotlyOutput("enrichBarplot"))
-       
-        )
+        tabPanel("Enrichment Barplot", plotlyOutput("enrichBarplot")),
+        tabPanel("Random Forest Results",
+                 tabsetPanel(
+                   tabPanel("Predictions", DTOutput("rfPredictions")),
+                   tabPanel("Metrics", DTOutput("rfMetrics")),
+                   tabPanel("Variable Importance", DTOutput("rfImportance"))
+                 )
+        ),
+        tabPanel("ROC Curve", plotlyOutput("rfROC"))
         
-       
+        
       )
+      
+      
     )
   )
+)
 
 
 server <- function(input, output, session) {
@@ -102,8 +163,11 @@ server <- function(input, output, session) {
     qc_snps = NULL,
     qc_table = NULL,
     gwas_res = NULL,
+    power_df = NULL,
+    
     ml_out = NULL
   )
+  
   
   output$qqPlot <- renderPlotly(NULL)
   output$manhattanPlot <- renderPlotly(NULL)
@@ -118,7 +182,7 @@ server <- function(input, output, session) {
     output$covarPreview <- renderDT(rv$covar)
   })
   
- 
+  
   observeEvent(input$vcfFile, {
     vcf <- readVcf(input$vcfFile$datapath, genome = "hg19")
     gt <- geno(vcf)$GT
@@ -161,7 +225,7 @@ server <- function(input, output, session) {
     
   })
   
-
+  
   
   
   
@@ -360,7 +424,7 @@ server <- function(input, output, session) {
   })
   
   
-
+  
   
   
   observeEvent(input$runQQ, {
@@ -507,7 +571,7 @@ server <- function(input, output, session) {
     })
   })
   
-
+  
   
   observeEvent(input$runML, {
     req(rv$gwas_res, rv$pheno, rv$qc_snps)
@@ -646,7 +710,7 @@ server <- function(input, output, session) {
     })
   })
   
-
+  
   observeEvent(input$plotGenes, {
     req(rv$annotated_hits)
     
@@ -727,7 +791,7 @@ server <- function(input, output, session) {
       showNotification(paste("❌ Enrichment failed:", e$message), type = "error", duration = 6)
     })
   })
-
+  
   observeEvent(input$plotEnrichment, {
     req(rv$enrichment_results)
     
@@ -772,6 +836,405 @@ server <- function(input, output, session) {
       showNotification(paste("❌ Plot error:", e$message), type = "error", duration = 6)
     })
   })
+  
+  observeEvent(input$runPCA, {
+    req(rv$qc_snps)
+    
+    showNotification("📈 Running PCA on QC-passed SNPs...", type = "message", duration = NULL, id = "pca_notice")
+    
+    tryCatch({
+      pca_data <- t(rv$qc_snps)
+      pca_res <- prcomp(pca_data, center = TRUE, scale. = TRUE)
+      
+      pcs <- as.data.table(pca_res$x[, 1:2])
+      pcs[, Sample := rownames(pca_res$x)]
+      
+      if (!is.null(rv$pheno)) {
+        pcs <- merge(pcs, rv$pheno[, .(sample_id, trait)], by.x = "Sample", by.y = "sample_id", all.x = TRUE)
+      }
+      
+      output$pcaPlot <- renderPlotly({
+        plot_ly(
+          data = pcs,
+          x = ~PC1,
+          y = ~PC2,
+          color = ~trait,
+          text = ~Sample,
+          type = "scatter",
+          mode = "markers",
+          marker = list(size = 10)
+        ) %>%
+          layout(
+            title = "PCA of Genotype Matrix",
+            xaxis = list(title = "PC1"),
+            yaxis = list(title = "PC2"),
+            hovermode = "closest"
+          )
+      })
+      
+      removeNotification("pca_notice")
+      showNotification("✅ PCA complete.", type = "message", duration = 4)
+      
+    }, error = function(e) {
+      removeNotification("pca_notice")
+      showNotification(paste("❌ PCA failed:", e$message), type = "error", duration = 6)
+    })
+  })
+  observeEvent(input$runUMAP, {
+    req(rv$qc_snps)
+    
+    showNotification("📉 Running UMAP on QC-passed SNPs...", type = "message", duration = NULL, id = "umap_notice")
+    
+    tryCatch({
+      umap_data <- t(rv$qc_snps)
+      
+      # Auto-install UMAP if needed
+      if (!requireNamespace("umap", quietly = TRUE)) {
+        install.packages("umap")
+      }
+      library(umap)
+      
+      umap_res <- umap(umap_data)
+      
+      umap_dt <- as.data.table(umap_res$layout)
+      setnames(umap_dt, c("UMAP1", "UMAP2"))
+      umap_dt[, Sample := rownames(umap_data)]
+      
+      if (!is.null(rv$pheno)) {
+        umap_dt <- merge(umap_dt, rv$pheno[, .(sample_id, trait)], by.x = "Sample", by.y = "sample_id", all.x = TRUE)
+      }
+      
+      output$umapPlot <- renderPlotly({
+        plot_ly(
+          data = umap_dt,
+          x = ~UMAP1,
+          y = ~UMAP2,
+          color = ~trait,
+          text = ~Sample,
+          type = "scatter",
+          mode = "markers",
+          marker = list(size = 10)
+        ) %>%
+          layout(
+            title = "UMAP of Genotype Matrix",
+            xaxis = list(title = "UMAP1"),
+            yaxis = list(title = "UMAP2"),
+            hovermode = "closest"
+          )
+      })
+      
+      removeNotification("umap_notice")
+      showNotification("✅ UMAP complete.", type = "message", duration = 4)
+      
+    }, error = function(e) {
+      removeNotification("umap_notice")
+      showNotification(paste("❌ UMAP failed:", e$message), type = "error", duration = 6)
+    })
+  })
+  
+  observeEvent(input$runPower, {
+    req(rv$pheno, rv$qc_snps)
+    
+    showNotification("🧮 Running power analysis...", type = "message", duration = NULL, id = "power_notice")
+    
+    tryCatch({
+      library(pwr)
+      
+      geno <- as.data.frame(t(rv$qc_snps))  # samples x SNPs
+      common_ids <- intersect(rownames(geno), rv$pheno$sample_id)
+      
+      geno <- geno[common_ids, , drop = FALSE]
+      pheno <- rv$pheno[match(common_ids, rv$pheno$sample_id), ]
+      geno$trait <- pheno$trait
+      
+      if (!is.numeric(geno$trait) || !all(geno$trait %in% c(0, 1))) {
+        removeNotification("power_notice")
+        showNotification("⚠️ Trait must be binary (0/1) for power analysis.", type = "warning")
+        return()
+      }
+      
+      x0 <- geno[geno$trait == 0, 1]
+      x1 <- geno[geno$trait == 1, 1]
+      
+      if (length(x0) < 2 || length(x1) < 2) {
+        removeNotification("power_notice")
+        showNotification("⚠️ Not enough samples in one or both groups.", type = "warning")
+        return()
+      }
+      
+      # Cohen's d
+      d <- abs(mean(x1, na.rm = TRUE) - mean(x0, na.rm = TRUE)) /
+        sqrt((var(x0, na.rm = TRUE) + var(x1, na.rm = TRUE)) / 2)
+      
+      # Observed power
+      pw <- pwr.t.test(
+        n = min(length(x0), length(x1)),
+        d = d,
+        sig.level = 0.05,
+        type = "two.sample",
+        alternative = "two.sided"
+      )
+      
+      # Required N per group for 80% power
+      required_n <- pwr.t.test(
+        power = 0.8,
+        d = d,
+        sig.level = 0.05,
+        type = "two.sample",
+        alternative = "two.sided"
+      )$n
+      
+      power_df <- data.table(
+        SNP = colnames(geno)[1],
+        Group0_N = length(x0),
+        Group1_N = length(x1),
+        Cohen_d = round(d, 3),
+        Observed_Power = round(pw$power, 3),
+        Required_N_80Power = ceiling(required_n)
+      )
+      rv$power_df <- power_df
+      
+      output$powerTable <- renderDT({
+        datatable(rv$power_df, options = list(dom = 't', scrollX = TRUE))
+      })
+      
+      removeNotification("power_notice")
+      showNotification("✅ Power analysis complete.", type = "message", duration = 4)
+      
+    }, error = function(e) {
+      removeNotification("power_notice")
+      showNotification(paste("❌ Power analysis failed:", e$message), type = "error", duration = 6)
+    })
+  })
+  
+      
+   
+  
+  output$download_power <- downloadHandler(
+    filename = function() {
+      paste0("Power_Analysis_", Sys.Date(), ".csv")
+    },
+    content = function(file) {
+      req(rv$power_df)
+      fwrite(rv$power_df, file)
+    }
+  )
+  
+  
+  observeEvent(input$runPowerCurve, {
+    req(rv$power_df)
+    
+    showNotification("📈 Generating power curve...", type = "message", duration = NULL, id = "powercurve_notice")
+    
+    tryCatch({
+      d <- rv$power_df$Cohen_d[1]
+      if (is.null(d) || is.na(d) || d <= 0) {
+        removeNotification("powercurve_notice")
+        showNotification("⚠️ Invalid effect size for power curve.", type = "warning")
+        return()
+      }
+      
+      n_range <- seq(5, 200, by = 1)
+      power_vals <- sapply(n_range, function(n) {
+        tryCatch({
+          pwr.t.test(n = n, d = d, sig.level = 0.05,
+                     type = "two.sample", alternative = "two.sided")$power
+        }, error = function(e) NA)
+      })
+      
+      power_df <- data.table(SampleSizePerGroup = n_range, Power = power_vals)
+      
+      output$powerPlot <- renderPlotly({
+        plot_ly(power_df, x = ~SampleSizePerGroup, y = ~Power,
+                type = 'scatter', mode = 'lines', line = list(color = "blue")) %>%
+          layout(
+            title = "Power Curve (based on Cohen's d)",
+            xaxis = list(title = "Sample Size Per Group"),
+            yaxis = list(title = "Statistical Power", range = c(0, 1)),
+            shapes = list(
+              list(type = "line", x0 = min(n_range), x1 = max(n_range),
+                   y0 = 0.8, y1 = 0.8,
+                   line = list(dash = "dash", color = "red"))
+            ),
+            annotations = list(
+              list(x = max(n_range) * 0.85, y = 0.82,
+                   text = "80% Power Threshold", showarrow = FALSE,
+                   font = list(color = "red", size = 12))
+            )
+          )
+      })
+      
+      removeNotification("powercurve_notice")
+      showNotification("✅ Power curve ready.", type = "message", duration = 4)
+      
+    }, error = function(e) {
+      removeNotification("powercurve_notice")
+      showNotification(paste("❌ Power curve failed:", e$message), type = "error", duration = 6)
+    })
+  })
+  observeEvent(input$runRF, {
+    req(rv$final_hits, rv$qc_snps, rv$pheno)
+    
+    showNotification("🌲 Training Random Forest model...", type = "message", duration = NULL, id = "rf_notice")
+    
+    tryCatch({
+      final_snps <- rv$final_hits$SNP
+      if (length(final_snps) < 2) {
+        removeNotification("rf_notice")
+        showNotification("⚠️ Not enough SNPs in final hits for ML.", type = "warning")
+        return()
+      }
+      
+      geno <- as.data.frame(t(rv$qc_snps[final_snps, , drop = FALSE]))
+      common_ids <- intersect(rownames(geno), rv$pheno$sample_id)
+      geno <- geno[common_ids, , drop = FALSE]
+      pheno <- rv$pheno[match(common_ids, rv$pheno$sample_id), ]
+      
+      # Ensure binary trait
+      if (!all(pheno$trait %in% c(0, 1))) {
+        removeNotification("rf_notice")
+        showNotification("⚠️ Trait must be binary (0/1).", type = "warning")
+        return()
+      }
+      
+      df <- data.table(geno, trait = as.factor(pheno$trait))
+      
+      # Split train/test 70/30
+      set.seed(123)
+      train_idx <- sample(seq_len(nrow(df)), size = 0.7 * nrow(df))
+      train <- df[train_idx]
+      test <- df[-train_idx]
+      
+      task <- TaskClassif$new(id = "rf_task", backend = train, target = "trait")
+      learner <- lrn("classif.ranger", predict_type = "prob", importance = "impurity")
+      learner$train(task)
+      
+      # Predict
+      pred <- learner$predict_newdata(test)
+      
+      # Predictions table
+      preds_df <- data.table(
+        Sample = rownames(test),
+        True = test$trait,
+        Pred = pred$response,
+        Prob_1 = round(pred$prob[, "1"], 4)
+      )
+      
+      output$rfPredictions <- renderDT({
+        datatable(preds_df, options = list(pageLength = 10))
+      })
+      rv$rf_preds <- preds_df
+      
+      # Metrics
+      cm <- table(True = preds_df$True, Pred = preds_df$Pred)
+      TP <- cm["1", "1"]
+      TN <- cm["0", "0"]
+      FP <- cm["0", "1"]
+      FN <- cm["1", "0"]
+      
+      acc <- (TP + TN) / sum(cm)
+      sens <- TP / (TP + FN)
+      spec <- TN / (TN + FP)
+      
+      auc <- tryCatch({
+        pred_obj <- ROCR::prediction(preds_df$Prob_1, preds_df$True)
+        ROCR::performance(pred_obj, "auc")@y.values[[1]]
+      }, error = function(e) NA)
+      
+      metrics_df <- data.table(
+        Metric = c("Accuracy", "Sensitivity", "Specificity", "AUC"),
+        Value = round(c(acc, sens, spec, auc), 4)
+      )
+      
+      output$rfMetrics <- renderDT({
+        datatable(metrics_df)
+      })
+      
+      # Variable Importance
+      vi <- learner$importance()
+      vi_df <- data.table(SNP = names(vi), Importance = round(vi, 4))
+      vi_df <- vi_df[order(-Importance)]
+      
+      output$rfImportance <- renderDT({
+        datatable(vi_df)
+      })
+      
+      
+      
+      showNotification("✅ Random Forest model trained.", type = "message", duration = 4)
+      removeNotification("rf_notice")
+      
+    }, error = function(e) {
+      removeNotification("rf_notice")
+      showNotification(paste("❌ RF training failed:", e$message), type = "error", duration = 6)
+    })
+  })
+  observeEvent(input$runROC, {
+    req(rv$rf_preds, rv$final_hits, rv$qc_snps, rv$pheno)
+    if (length(rv$final_hits$SNP) < 2) {
+      showNotification("⚠️ Not enough SNPs in final hits to build ROC.", type = "warning")
+      return()
+    }
+    
+    showNotification("📉 Generating ROC plot...", type = "message", duration = NULL, id = "roc_notice")
+    
+    tryCatch({
+      # Reconstruct prediction from stored df
+      truth <- as.numeric(as.character(rv$rf_preds$True))
+      prob_1 <- rv$rf_preds$Prob_1
+      
+      pred_obj <- ROCR::prediction(prob_1, truth)
+      perf <- ROCR::performance(pred_obj, "tpr", "fpr")
+      
+      fpr <- perf@x.values[[1]]
+      tpr <- perf@y.values[[1]]
+      roc_df <- data.table(FPR = fpr, TPR = tpr)
+      
+      output$rfROC <- renderPlotly({
+        plot_ly(roc_df, x = ~FPR, y = ~TPR, type = 'scatter', mode = 'lines',
+                line = list(color = "darkgreen")) %>%
+          layout(
+            title = "ROC Curve",
+            xaxis = list(title = "False Positive Rate"),
+            yaxis = list(title = "True Positive Rate"),
+            shapes = list(list(
+              type = "line", x0 = 0, x1 = 1, y0 = 0, y1 = 1,
+              line = list(dash = "dash", color = "gray")
+            ))
+          )
+      })
+      
+      removeNotification("roc_notice")
+      showNotification("✅ ROC curve ready.", type = "message", duration = 4)
+      
+    }, error = function(e) {
+      removeNotification("roc_notice")
+      showNotification(paste("❌ ROC plot failed:", e$message), type = "error", duration = 6)
+    })
+  })
+  output$download_rf_preds <- downloadHandler(
+    filename = function() paste0("RF_Predictions_", Sys.Date(), ".csv"),
+    content = function(file) {
+      req(rv$rf_preds)
+      fwrite(rv$rf_preds, file)
+    }
+  )
+  
+  output$download_rf_metrics <- downloadHandler(
+    filename = function() paste0("RF_Metrics_", Sys.Date(), ".csv"),
+    content = function(file) {
+      req(output$rfMetrics)
+      fwrite(as.data.table(output$rfMetrics()), file)
+    }
+  )
+  
+  output$download_rf_importance <- downloadHandler(
+    filename = function() paste0("RF_Importance_", Sys.Date(), ".csv"),
+    content = function(file) {
+      req(output$rfImportance)
+      fwrite(as.data.table(output$rfImportance()), file)
+    }
+  )
   
   
   
