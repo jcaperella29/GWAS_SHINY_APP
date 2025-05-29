@@ -21,6 +21,13 @@ options(shiny.maxRequestSize = 50000 * 1024^2)  # 500 MB
 
 
 ui <- fluidPage(
+  tags$head(
+    tags$link(rel = "stylesheet", type = "text/css", href = "style.css")
+  ),tags$head(
+    tags$link(rel = "stylesheet", href = "https://fonts.googleapis.com/css2?family=Montserrat:wght@400;600;700&display=swap")
+  ),
+  
+  
   titlePanel("JCAP GWAS Analysis"),
   sidebarLayout(
     sidebarPanel(
@@ -80,7 +87,7 @@ ui <- fluidPage(
     ),
     mainPanel(
       tabsetPanel(
-        tabPanel("README",
+        tabPanel(title = "README", value = "readme_tab", class = "readme-tab",
                  fluidRow(
                    column(
                      width = 12,
