@@ -36,6 +36,35 @@ A complete, interactive platform for performing QC, GWAS, ML modeling, gene mapp
 
 ---
 
+## 📸 Screenshots
+
+### 🧪 QC Summary Table
+![QC Summary](screenshots/QC_chart.png)
+
+---
+
+### 🌋 Manhattan Plot
+![Manhattan Plot](screenshots/Manhattan_plot.png)
+
+---
+
+### 📊 GWAS Results Table
+![GWAS Results](screenshots/GWAS_results.png)
+
+---
+
+### 🧬 SNP → Gene Table
+![SNP to Gene Table](screenshots/SNP_GENE_TABLE.png)
+
+---
+
+### 🧬 Gene Mapping Plot
+![SNP to Gene Plot](screenshots/SNP_GENE_PLOT.png)
+
+
+
+
+
 ## 🧱 Tech Stack
 
 - **R 4.x** via [`rocker/shiny`](https://hub.docker.com/r/rocker/shiny)
