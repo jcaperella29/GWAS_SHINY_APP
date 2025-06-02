@@ -90,20 +90,49 @@ shiny::runApp()
 
 Make sure required R packages are installed (listed in app.R)
 
-###⚗️ Run with Singularity (HPC)
+###⚗️ Run with Singularity and SLURM (HPC)
 
 1.Build container:
 
 in bash
 sudo singularity build gwas_app.sif Singularity.def
 
-2.Run inside HPC environment:
+2. Submit the app to SLURM
+Use the included SLURM batch script to launch the Shiny app in a containerized HPC environment:
+
 in bash
+sbatch run_gwas_app.slurm
 
-singularity exec --bind $PWD:/workspace gwas_app.sif R -e "shiny::runApp('/srv/shiny-server/app', host='0.0.0.0', port=3838)"
-3.Forward port or launch on compute node via sbatch script
+This will:
 
-script
+Launch the app inside the container
+
+Bind it to 0.0.0.0 on port 3838
+
+Generate a log file: gwas_shiny.log
+
+3. Access the app
+If you're on WSL or a local machine:
+
+Open your browser and go to:
+http://localhost:3838
+If you're running on a remote VM:
+
+ssh -L 3838:localhost:3838 your_user@your_server_ip
+
+Then visit:
+
+http://localhost:3838
+
+
+
+
+
+
+
+
+
+
 
 🧭 How to Use
 Upload Data
