@@ -79,6 +79,8 @@ ui <- fluidPage(
       downloadButton("download_final", "Download Final Hits"),
       downloadButton("download_annotated", "Download Annotated Hits"),
       downloadButton("download_enrichment", "Download Enrichment Table"),
+      downloadButton("download_enrichment_edges", "Download Pathway–Gene Edges"),
+
       downloadButton("download_rf_preds", "Download RF Predictions"),
       downloadButton("download_rf_metrics", "Download RF Metrics"),
       downloadButton("download_rf_importance", "Download RF Importance"),
@@ -1261,11 +1263,19 @@ server <- function(input, output, session) {
     }
   )
   
-  
+ output$download_enrichment_edges <- downloadHandler(
+  filename = function() paste0("Pathway_Enrichment_Edges_", Sys.Date(), ".csv"),
+  content = function(file) {
+    req(rv$enrich_edges)
+    fwrite(rv$enrich_edges, file)
+  }
+)
+ 
   
 }
 
 
 
 shinyApp(ui, server)
+
 
