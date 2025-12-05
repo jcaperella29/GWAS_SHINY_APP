@@ -187,17 +187,16 @@ Can't read output 'rfPredictions'	RF model not trained	Click Run Random Forest f
 Gene mapping failed	Invalid SNP coordinates or gene DB issue	Check VCF chr formatting (should match hg19)
 Enrichment failed	Too few gene symbols	Ensure gene mapping produced valid symbols
 Package not found	Singularity not built properly	Rebuild container with correct R packages
+Some enrichment databases may return no matching pathways for the genes mapped in your dataset.
+If this happens, the app may display a “character(0)” or “no enrichment results for this database” message.
+
+This simply means that the selected database does not contain any pathways associated with your gene list.
+Try selecting another enrichment database (e.g., KEGG, GO Biological Process, or Reactome), as results often vary between them.
+
+In addition to the main enrichment table, the app also generates a Pathway–Gene Edges file, which lists each enriched term alongside its contributing genes. This file can be downloaded and used for network visualizations or downstream analyses.
 
 🙋‍♂️ Credits & Contact
 🔬 App by John Caperella
-
-📬 Contact: @jcaperella29
-“Stealing the distorted desires of legacy pipelines.” 🎩
-
-Ready for GWAS evolution.
-
-
-
 
 
 
