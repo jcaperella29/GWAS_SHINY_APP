@@ -758,65 +758,68 @@ server <- function(input, output, session) {
   })
   
   
-      
-    observeEvent(input$runEnrichment, {
-  req(rv$annotated_hits)
-  
-  showNotification("📡 Running gene set enrichment...", type = "message", duration = NULL, id = "enrich_notice")
-  
-  tryCatch({
-    genes <- unique(na.omit(rv$annotated_hits$Gene_Symbol))
-    if (length(genes) < 2) stop("Need at least 2 gene symbols to enrich.")
-    
-    enrichr_dbs <- c("KEGG_2021_Human", "GO_Biological_Process_2021", "Reactome_2016")
-    enrichr_results <- enrichr(genes, enrichr_dbs)
-    
-    # Combine all DBs into one big table, keeping the Genes column
-    enrichment_combined <- rbindlist(
-      lapply(names(enrichr_results), function(db) {
-        dt <- as.data.table(enrichr_results[[db]])
-        dt[, Database := db]
-        return(dt)
-      }),
-      fill = TRUE
-    )
-    
-    # Explicitly keep the key columns including the genes in each pathway
-    keep_cols <- intersect(
-      c("Database", "Term", "Overlap", "P.value", "Adjusted.P.value",
-        "Old.P.value", "Old.Adjusted.P.value", "Odds.Ratio", "Combined.Score",
-        "Genes"),
-      names(enrichment_combined)
-    )
-    enrichment_combined <- enrichment_combined[, ..keep_cols]
-    
-    rv$enrichment_results <- enrichment_combined
-    
-    output$enrichmentTable <- renderDT({
-      datatable(enrichment_combined, options = list(pageLength = 10, scrollX = TRUE))
-    })
-    
-    output$download_enrichment <- downloadHandler(
-      filename = function() paste0("Pathway_Enrichment_", Sys.Date(), ".csv"),
-      content = function(file) {
-        fwrite(rv$enrichment_results, file)
+  observeEvent(input$runEnrichment, {
+    req(rv$annotated_hits)
+    req(input$enrich_db)
+
+    showNotification("📡 Running gene set enrichment...", type = "message",
+                     duration = NULL, id = "enrich_notice")
+
+    tryCatch({
+      genes <- unique(na.omit(rv$annotated_hits$Gene_Symbol))
+      if (length(genes) < 2)
+        stop("Need at least 2 gene symbols to enrich.")
+
+      # Use the user-selected DB(s); fall back to defaults if somehow empty
+      enrichr_dbs <- input$enrich_db
+      if (is.null(enrichr_dbs) || length(enrichr_dbs) == 0) {
+        enrichr_dbs <- c("KEGG_2021_Human",
+                         "GO_Biological_Process_2021",
+                         "Reactome_2016")
       }
-    )
-    
-    # OPTIONAL: long-format term–gene edges table for network plotting
-    # Each row = (Database, Term, Gene)
-    rv$enrich_edges <- enrichment_combined[
-      , .(Gene = unlist(strsplit(Genes, ";|,"))), by = .(Database, Term)
-    ]
-    
-    removeNotification("enrich_notice")
-    showNotification("✅ Enrichment complete.", type = "message", duration = 4)
-    
-  }, error = function(e) {
-    removeNotification("enrich_notice")
-    showNotification(paste("❌ Enrichment failed:", e$message), type = "error", duration = 6)
+
+      enrichr_results <- enrichr(genes, enrichr_dbs)
+
+      # Combine all DBs into one big table, tagging each row with its database
+      enrichment_combined <- data.table::rbindlist(
+        lapply(names(enrichr_results), function(db) {
+          dt <- data.table::as.data.table(enrichr_results[[db]])
+          dt[, Database := db]
+          dt
+        }),
+        fill = TRUE
+      )
+
+      keep_cols <- intersect(
+        c("Database", "Term", "Overlap", "P.value", "Adjusted.P.value",
+          "Old.P.value", "Old.Adjusted.P.value", "Odds.Ratio",
+          "Combined.Score", "Genes"),
+        names(enrichment_combined)
+      )
+      enrichment_combined <- enrichment_combined[, ..keep_cols]
+
+      # Store for downstream use
+      rv$enrichment_results <- enrichment_combined
+
+      # Long-format edges table (Database, Term, Gene)
+      rv$enrich_edges <- enrichment_combined[
+        , .(Gene = unlist(strsplit(Genes, ";|,"))), by = .(Database, Term)
+      ]
+
+      output$enrichmentTable <- DT::renderDT({
+        DT::datatable(enrichment_combined,
+                      options = list(pageLength = 10, scrollX = TRUE))
+      })
+
+      removeNotification("enrich_notice")
+      showNotification("✅ Enrichment complete.", type = "message", duration = 4)
+
+    }, error = function(e) {
+      removeNotification("enrich_notice")
+      showNotification(paste("❌ Enrichment failed:", e$message),
+                       type = "error", duration = 6)
+    })
   })
-})
 
   
   observeEvent(input$plotEnrichment, {
@@ -1271,7 +1274,28 @@ server <- function(input, output, session) {
   }
 )
  
-  
+    # Download full enrichment table
+  output$download_enrichment <- downloadHandler(
+    filename = function() {
+      paste0("Pathway_Enrichment_", Sys.Date(), ".csv")
+    },
+    content = function(file) {
+      req(rv$enrichment_results)
+      fwrite(rv$enrichment_results, file)
+    }
+  )
+
+  # Download term–gene edges (Database, Term, Gene)
+  output$download_enrichment_edges <- downloadHandler(
+    filename = function() {
+      paste0("Pathway_Enrichment_Edges_", Sys.Date(), ".csv")
+    },
+    content = function(file) {
+      req(rv$enrich_edges)
+      fwrite(rv$enrich_edges, file)
+    }
+  )
+
 }
 
 
